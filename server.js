@@ -263,7 +263,7 @@ app.get("/burn", (req, res) => {
 <script>
 const BRIDGE = "${config.BRIDGE_ADDRESS}";
 const WBMB = "${config.WBMB_ADDRESS}";
-const CHAIN_HEX = "0x14a34"; // 84532
+const CHAIN_HEX = "0x14a34";
 
 const WBMB_ABI = [
   "function balanceOf(address) view returns (uint256)",
@@ -284,106 +284,94 @@ function setStatus(msg, type) {
   el.className = "status-" + type;
 }
 
-function onConnected(addr) {
-  userAddress = addr;
-  document.getElementById("walletAddr").textContent = addr.slice(0,6) + "..." + addr.slice(-4);
-  document.getElementById("btnConnect").textContent = "Connected";
-  document.getElementById("btnConnect").disabled = true;
-  document.getElementById("btnFaucet").disabled = false;
-  document.getElementById("btnBurn").disabled = false;
-}
-
-async function ensureBaseSepolia() {
-  const chainId = await window.ethereum.request({ method: "eth_chainId" });
-  if (chainId === CHAIN_HEX) return true;
-
-  try {
-    await window.ethereum.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: CHAIN_HEX }]
-    });
-    return true;
-  } catch (e) {
-    if (e.code === 4902) {
-      try {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [{
-            chainId: CHAIN_HEX,
-            chainName: "Base Sepolia",
-            rpcUrls: ["https://sepolia.base.org"],
-            nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
-            blockExplorerUrls: ["https://sepolia.basescan.org"]
-          }]
-        });
-        return true;
-      } catch (e2) {
-        return false;
-      }
-    }
-    return false;
-  }
-}
-
 async function connectWallet() {
   try {
     if (typeof window.ethereum === "undefined") {
-      setStatus("MetaMask not installed. Please install the MetaMask browser extension.", "err");
+      setStatus("MetaMask not installed. Please install the browser extension.", "err");
       return;
     }
 
-    setStatus("Connecting wallet...", "wait");
+    setStatus("Connecting...", "wait");
 
-    // 1. 계정 요청 (MetaMask 팝업)
-    let accounts;
-    try {
+    // 1. 이미 연결된 계정 확인 (팝업 없음)
+    var accounts = await window.ethereum.request({ method: "eth_accounts" });
+
+    // 2. 없으면 연결 요청 (MetaMask 팝업)
+    if (!accounts || accounts.length === 0) {
       accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-    } catch (e) {
-      setStatus("MetaMask connection rejected.", "err");
-      return;
     }
 
     if (!accounts || accounts.length === 0) {
-      setStatus("No account selected. Please unlock MetaMask and try again.", "err");
+      setStatus("No account found. Unlock MetaMask and retry.", "err");
       return;
     }
 
-    // 2. Base Sepolia 네트워크 확인/전환
-    const switched = await ensureBaseSepolia();
-    if (!switched) {
-      setStatus("Please switch to Base Sepolia in MetaMask and try again.", "err");
-      return;
+    // 3. 체인 확인 & 전환
+    var chainId = await window.ethereum.request({ method: "eth_chainId" });
+    if (chainId !== CHAIN_HEX) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: CHAIN_HEX }]
+        });
+      } catch (e) {
+        if (e.code === 4902) {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: CHAIN_HEX,
+              chainName: "Base Sepolia",
+              rpcUrls: ["https://sepolia.base.org"],
+              nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+              blockExplorerUrls: ["https://sepolia.basescan.org"]
+            }]
+          });
+        } else {
+          setStatus("Switch to Base Sepolia in MetaMask. Error: " + e.message, "err");
+          return;
+        }
+      }
     }
 
-    // 3. ethers provider + signer 생성 (계정 주소 직접 지정)
-    provider = new ethers.BrowserProvider(window.ethereum, {
-      chainId: 84532,
-      name: "base-sepolia"
-    });
+    // 4. provider + signer
+    provider = new ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner(accounts[0]);
+    userAddress = accounts[0];
 
-    // 4. 컨트랙트 연결
+    // 5. 컨트랙트
     wbmbContract = new ethers.Contract(WBMB, WBMB_ABI, signer);
     bridgeContract = new ethers.Contract(BRIDGE, BRIDGE_ABI, signer);
 
-    onConnected(accounts[0]);
+    // 6. UI 업데이트
+    document.getElementById("walletAddr").textContent = userAddress.slice(0,6) + "..." + userAddress.slice(-4);
+    document.getElementById("btnConnect").textContent = "Connected";
+    document.getElementById("btnConnect").disabled = true;
+    document.getElementById("btnFaucet").disabled = false;
+    document.getElementById("btnBurn").disabled = false;
     await updateBalance();
-    setStatus("Connected: " + accounts[0].slice(0,6) + "..." + accounts[0].slice(-4), "ok");
+    setStatus("Connected: " + userAddress.slice(0,6) + "..." + userAddress.slice(-4), "ok");
 
   } catch (err) {
-    setStatus("Error: " + (err.shortMessage || err.message), "err");
+    setStatus("[" + (err.code || "?") + "] " + (err.shortMessage || err.message || String(err)), "err");
   }
 }
 
-// MetaMask 이벤트: 계정/체인 변경 시 새로고침
-if (window.ethereum) {
+if (typeof window.ethereum !== "undefined") {
   window.ethereum.on("chainChanged", function() { location.reload(); });
   window.ethereum.on("accountsChanged", function() { location.reload(); });
+
+  // 페이지 로드 시 이미 연결되어 있으면 자동 연결
+  window.addEventListener("load", async function() {
+    try {
+      var accs = await window.ethereum.request({ method: "eth_accounts" });
+      if (accs && accs.length > 0) { connectWallet(); }
+    } catch(e) {}
+  });
 }
 
 async function updateBalance() {
   try {
-    const bal = await wbmbContract.balanceOf(userAddress);
+    var bal = await wbmbContract.balanceOf(userAddress);
     document.getElementById("tokenBalance").textContent = ethers.formatEther(bal);
   } catch (e) {
     document.getElementById("tokenBalance").textContent = "?";
@@ -393,14 +381,14 @@ async function updateBalance() {
 async function getFaucet() {
   try {
     document.getElementById("btnFaucet").disabled = true;
-    setStatus("Requesting 100 mWBMB from faucet...", "wait");
-    const tx = await wbmbContract.faucet(ethers.parseEther("100"));
+    setStatus("Requesting 100 mWBMB from faucet... (confirm in MetaMask)", "wait");
+    var tx = await wbmbContract.faucet(ethers.parseEther("100"));
     setStatus("TX sent, waiting for confirmation...", "wait");
     await tx.wait();
     await updateBalance();
     setStatus("Got 100 mWBMB!", "ok");
   } catch (err) {
-    setStatus("Faucet error: " + (err.shortMessage || err.message), "err");
+    setStatus("Faucet: " + (err.shortMessage || err.message), "err");
   } finally {
     document.getElementById("btnFaucet").disabled = false;
   }
@@ -408,37 +396,31 @@ async function getFaucet() {
 
 async function executeBurn() {
   try {
-    const amount = document.getElementById("burnAmount").value;
-    const mobickAddr = document.getElementById("mobickAddr").value;
+    var amount = document.getElementById("burnAmount").value;
+    var mobickAddr = document.getElementById("mobickAddr").value;
     if (!amount || parseFloat(amount) <= 0) { setStatus("Enter a valid amount", "err"); return; }
     if (!mobickAddr) { setStatus("Enter a BMB destination address", "err"); return; }
 
-    const parsedAmount = ethers.parseEther(amount);
+    var parsedAmount = ethers.parseEther(amount);
     document.getElementById("btnBurn").disabled = true;
 
-    // allowance 확인 + approve
-    const allowance = await wbmbContract.allowance(userAddress, BRIDGE);
+    var allowance = await wbmbContract.allowance(userAddress, BRIDGE);
     if (allowance < parsedAmount) {
-      setStatus("Step 1/2: Approving tokens... (confirm in MetaMask)", "wait");
-      const approveTx = await wbmbContract.approve(BRIDGE, parsedAmount);
-      setStatus("Step 1/2: Waiting for approval TX...", "wait");
+      setStatus("Step 1/2: Approving... (confirm in MetaMask)", "wait");
+      var approveTx = await wbmbContract.approve(BRIDGE, parsedAmount);
+      setStatus("Step 1/2: Waiting for approval...", "wait");
       await approveTx.wait();
     }
 
-    // 소각 실행
     setStatus("Step 2/2: Burning " + amount + " mWBMB... (confirm in MetaMask)", "wait");
-    const burnTx = await bridgeContract.burnForBMB(parsedAmount, mobickAddr);
-    setStatus("Waiting for burn TX confirmation...", "wait");
-    const receipt = await burnTx.wait();
+    var burnTx = await bridgeContract.burnForBMB(parsedAmount, mobickAddr);
+    setStatus("Waiting for confirmation...", "wait");
+    var receipt = await burnTx.wait();
 
     await updateBalance();
-    setStatus(
-      "Burn successful! " + amount + " mWBMB burned. TX: " + receipt.hash.slice(0,14) + "..." +
-      " Check the Monitor Dashboard!",
-      "ok"
-    );
+    setStatus("Burn successful! " + amount + " mWBMB burned. TX: " + receipt.hash.slice(0,14) + "... Check Monitor Dashboard!", "ok");
   } catch (err) {
-    setStatus("Burn error: " + (err.shortMessage || err.message), "err");
+    setStatus("Burn: " + (err.shortMessage || err.message), "err");
   } finally {
     document.getElementById("btnBurn").disabled = false;
   }
