@@ -287,18 +287,31 @@ function setStatus(msg, type) {
 async function connectWallet() {
   try {
     if (typeof window.ethereum === "undefined") {
-      setStatus("MetaMask not installed. Please install the browser extension.", "err");
+      setStatus("No wallet detected. Install MetaMask extension.", "err");
       return;
     }
 
     setStatus("Connecting...", "wait");
 
-    // 1. 이미 연결된 계정 확인 (팝업 없음)
+    // 1. 이미 연결된 계정 확인
     var accounts = await window.ethereum.request({ method: "eth_accounts" });
 
-    // 2. 없으면 연결 요청 (MetaMask 팝업)
+    // 2. 없으면 wallet_requestPermissions 으로 권한 요청 (MetaMask 공식 권장)
     if (!accounts || accounts.length === 0) {
-      accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      try {
+        await window.ethereum.request({
+          method: "wallet_requestPermissions",
+          params: [{ eth_accounts: {} }]
+        });
+        accounts = await window.ethereum.request({ method: "eth_accounts" });
+      } catch (permErr) {
+        if (permErr.code === 4001) {
+          setStatus("Connection rejected. Please approve in MetaMask.", "err");
+        } else {
+          setStatus("Permission error [" + permErr.code + "]: " + permErr.message, "err");
+        }
+        return;
+      }
     }
 
     if (!accounts || accounts.length === 0) {
@@ -327,24 +340,24 @@ async function connectWallet() {
             }]
           });
         } else {
-          setStatus("Switch to Base Sepolia in MetaMask. Error: " + e.message, "err");
+          setStatus("Switch to Base Sepolia in MetaMask.", "err");
           return;
         }
       }
+      // 체인 전환 후 계정 다시 조회
+      accounts = await window.ethereum.request({ method: "eth_accounts" });
     }
 
-    // 4. provider + signer (이중 eth_requestAccounts 방지)
+    // 4. ethers provider + signer (내부 이중호출 방지)
+    var cached = accounts.slice();
     provider = new ethers.BrowserProvider(window.ethereum);
-    var cachedAccounts = accounts.slice();
     var origSend = provider.send.bind(provider);
     provider.send = async function(method, params) {
-      if (method === "eth_requestAccounts" || method === "eth_accounts") {
-        return cachedAccounts;
-      }
+      if (method === "eth_requestAccounts" || method === "eth_accounts") return cached;
       return origSend(method, params);
     };
     signer = await provider.getSigner();
-    userAddress = cachedAccounts[0];
+    userAddress = cached[0];
 
     // 5. 컨트랙트
     wbmbContract = new ethers.Contract(WBMB, WBMB_ABI, signer);
@@ -366,9 +379,12 @@ async function connectWallet() {
 
 if (typeof window.ethereum !== "undefined") {
   window.ethereum.on("chainChanged", function() { location.reload(); });
-  window.ethereum.on("accountsChanged", function() { location.reload(); });
+  window.ethereum.on("accountsChanged", function(accs) {
+    if (accs.length === 0) { location.reload(); }
+    else { connectWallet(); }
+  });
 
-  // 페이지 로드 시 이미 연결되어 있으면 자동 연결
+  // 페이지 로드 시 이미 승인된 사이트면 자동 연결
   window.addEventListener("load", async function() {
     try {
       var accs = await window.ethereum.request({ method: "eth_accounts" });
