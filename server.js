@@ -290,22 +290,42 @@ async function connectWallet() {
       setStatus("MetaMask not found. Please install it.", "err");
       return;
     }
-    provider = new ethers.BrowserProvider(window.ethereum);
-    const network = await provider.getNetwork();
-    if (Number(network.chainId) !== CHAIN_ID) {
-      setStatus("Please switch MetaMask to Base Sepolia (Chain ID: 84532)", "err");
-      try {
+
+    setStatus("Connecting...", "wait");
+
+    // 1. 계정 접근 요청
+    await window.ethereum.request({ method: "eth_requestAccounts" });
+
+    // 2. Base Sepolia로 전환 (이미 맞으면 무시됨)
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: "0x14a34" }]
+      });
+    } catch (switchErr) {
+      // 네트워크가 없으면 추가
+      if (switchErr.code === 4902) {
         await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x" + CHAIN_ID.toString(16) }]
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: "0x14a34",
+            chainName: "Base Sepolia",
+            rpcUrls: ["https://sepolia.base.org"],
+            nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+            blockExplorerUrls: ["https://sepolia.basescan.org"]
+          }]
         });
-        provider = new ethers.BrowserProvider(window.ethereum);
-      } catch (e) {
+      } else {
+        setStatus("Network switch failed: " + switchErr.message, "err");
         return;
       }
     }
+
+    // 3. 전환 후 provider 새로 생성
+    provider = new ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner();
     const addr = await signer.getAddress();
+
     document.getElementById("walletAddr").textContent = addr.slice(0,6) + "..." + addr.slice(-4);
     document.getElementById("btnConnect").textContent = "Connected";
     document.getElementById("btnConnect").disabled = true;
@@ -316,7 +336,7 @@ async function connectWallet() {
     bridgeContract = new ethers.Contract(BRIDGE, BRIDGE_ABI, signer);
 
     await updateBalance();
-    setStatus("Wallet connected!", "ok");
+    setStatus("Wallet connected! (" + addr.slice(0,6) + "..." + addr.slice(-4) + ")", "ok");
   } catch (err) {
     setStatus("Connection failed: " + err.message, "err");
   }
