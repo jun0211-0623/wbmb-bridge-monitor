@@ -560,6 +560,16 @@ app.get("/swap", (req, res) => {
     </div>
   </div>
 
+  <div class="card" id="poolCard">
+    <b>Pool Status</b>
+    <div style="background:#0f3460;border-radius:6px;padding:12px;margin-top:10px">
+      <div class="info-row"><span>Reserve mWBMB</span><span id="poolResA">-</span></div>
+      <div class="info-row"><span>Reserve mFYUSD</span><span id="poolResB">-</span></div>
+      <div class="info-row"><span>Price (1 mWBMB)</span><span id="poolPrice">-</span></div>
+      <div class="info-row"><span>Total LP Supply</span><span id="poolLP">-</span></div>
+    </div>
+  </div>
+
   <div class="card swap-box">
     <div class="token-label">
       <label>From: <b id="fromToken">mWBMB</b></label>
@@ -631,6 +641,22 @@ async function updateSwapBalances() {
     var fStr = parseFloat(ethers.formatEther(fbal)).toFixed(4);
     document.getElementById("fromBal").textContent = "Balance: " + (isAtoB ? wStr : fStr);
     document.getElementById("toBal").textContent = "Balance: " + (isAtoB ? fStr : wStr);
+  } catch(e) {}
+  updatePoolInfo();
+}
+
+async function updatePoolInfo() {
+  try {
+    var res = await dexContract.getReserves();
+    var rA = parseFloat(ethers.formatEther(res[0]));
+    var rB = parseFloat(ethers.formatEther(res[1]));
+    document.getElementById("poolResA").textContent = rA.toFixed(4) + " mWBMB";
+    document.getElementById("poolResB").textContent = rB.toFixed(4) + " mFYUSD";
+    if (rA > 0) {
+      document.getElementById("poolPrice").textContent = (rB / rA).toFixed(4) + " mFYUSD";
+    }
+    var supply = await dexContract.totalSupply();
+    document.getElementById("poolLP").textContent = parseFloat(ethers.formatEther(supply)).toFixed(4);
   } catch(e) {}
 }
 
