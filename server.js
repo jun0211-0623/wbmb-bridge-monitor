@@ -43,6 +43,8 @@ const ERC20_ABI = [
 const app = express();
 const burnEvents = [];
 const dexEvents = [];
+const seenBurnIds = new Set();
+const seenDexKeys = new Set();
 
 // ===== 공통 스타일 & 지갑 연결 코드 =====
 
@@ -250,7 +252,8 @@ async function startMonitor() {
 
   function processBurnEvent(e) {
     const burnId = e.args[0].toString();
-    if (burnEvents.some((ev) => ev.burnId === burnId)) return;
+    if (seenBurnIds.has(burnId)) return;
+    seenBurnIds.add(burnId);
     const event = {
       burnId,
       burner: e.args[1],
@@ -270,7 +273,9 @@ async function startMonitor() {
 
   function processDexEvent(e, type) {
     const txHash = e.transactionHash;
-    if (dexEvents.some((ev) => ev.txHash === txHash && ev.type === type)) return;
+    const key = `${txHash}:${type}`;
+    if (seenDexKeys.has(key)) return;
+    seenDexKeys.add(key);
 
     let event = { type, txHash, timestamp: new Date().toISOString() };
 
@@ -307,14 +312,18 @@ async function startMonitor() {
     const fromBlock = Math.max(0, currentBlock - 5000);
     console.log(`Loading past events from block ${fromBlock}...`);
 
-    const pastBurns = await bridge.queryFilter("BurnExecuted", fromBlock);
+    const queries = [bridge.queryFilter("BurnExecuted", fromBlock)];
+    if (dex) {
+      queries.push(dex.queryFilter("Swap", fromBlock));
+      queries.push(dex.queryFilter("LiquidityAdded", fromBlock));
+      queries.push(dex.queryFilter("LiquidityRemoved", fromBlock));
+    }
+    const [pastBurns, pastSwaps, pastAdds, pastRemoves] = await Promise.all(queries);
+
     for (const e of pastBurns) processBurnEvent(e);
     if (pastBurns.length > 0) console.log(`Loaded ${pastBurns.length} burn event(s)`);
 
     if (dex) {
-      const pastSwaps = await dex.queryFilter("Swap", fromBlock);
-      const pastAdds = await dex.queryFilter("LiquidityAdded", fromBlock);
-      const pastRemoves = await dex.queryFilter("LiquidityRemoved", fromBlock);
       for (const e of pastSwaps) processDexEvent(e, "Swap");
       for (const e of pastAdds) processDexEvent(e, "LiquidityAdded");
       for (const e of pastRemoves) processDexEvent(e, "LiquidityRemoved");
@@ -333,13 +342,16 @@ async function startMonitor() {
       const currentBlock = await provider.getBlockNumber();
       if (currentBlock <= lastBlock) return;
 
-      const burns = await bridge.queryFilter("BurnExecuted", lastBlock + 1, currentBlock);
-      for (const e of burns) processBurnEvent(e);
-
+      const pollQueries = [bridge.queryFilter("BurnExecuted", lastBlock + 1, currentBlock)];
       if (dex) {
-        const swaps = await dex.queryFilter("Swap", lastBlock + 1, currentBlock);
-        const adds = await dex.queryFilter("LiquidityAdded", lastBlock + 1, currentBlock);
-        const removes = await dex.queryFilter("LiquidityRemoved", lastBlock + 1, currentBlock);
+        pollQueries.push(dex.queryFilter("Swap", lastBlock + 1, currentBlock));
+        pollQueries.push(dex.queryFilter("LiquidityAdded", lastBlock + 1, currentBlock));
+        pollQueries.push(dex.queryFilter("LiquidityRemoved", lastBlock + 1, currentBlock));
+      }
+      const [burns, swaps, adds, removes] = await Promise.all(pollQueries);
+
+      for (const e of burns) processBurnEvent(e);
+      if (dex) {
         for (const e of swaps) processDexEvent(e, "Swap");
         for (const e of adds) processDexEvent(e, "LiquidityAdded");
         for (const e of removes) processDexEvent(e, "LiquidityRemoved");
@@ -635,8 +647,7 @@ function setMax() {
 
 async function updateSwapBalances() {
   try {
-    var wbal = await wbmbContract.balanceOf(userAddress);
-    var fbal = await fyusdContract.balanceOf(userAddress);
+    var [wbal, fbal] = await Promise.all([wbmbContract.balanceOf(userAddress), fyusdContract.balanceOf(userAddress)]);
     var wStr = parseFloat(ethers.formatEther(wbal)).toFixed(4);
     var fStr = parseFloat(ethers.formatEther(fbal)).toFixed(4);
     document.getElementById("fromBal").textContent = "Balance: " + (isAtoB ? wStr : fStr);
@@ -647,7 +658,7 @@ async function updateSwapBalances() {
 
 async function updatePoolInfo() {
   try {
-    var res = await dexContract.getReserves();
+    var [res, supply] = await Promise.all([dexContract.getReserves(), dexContract.totalSupply()]);
     var rA = parseFloat(ethers.formatEther(res[0]));
     var rB = parseFloat(ethers.formatEther(res[1]));
     document.getElementById("poolResA").textContent = rA.toFixed(4) + " mWBMB";
@@ -655,7 +666,6 @@ async function updatePoolInfo() {
     if (rA > 0) {
       document.getElementById("poolPrice").textContent = (rB / rA).toFixed(4) + " mFYUSD";
     }
-    var supply = await dexContract.totalSupply();
     document.getElementById("poolLP").textContent = parseFloat(ethers.formatEther(supply)).toFixed(4);
   } catch(e) {}
 }
@@ -673,16 +683,14 @@ async function getQuote() {
     try {
       var tokenIn = isAtoB ? WBMB : FYUSD;
       var amountIn = ethers.parseEther(val);
-      var amountOut = await dexContract.getAmountOut(tokenIn, amountIn);
+      var [amountOut, reserves] = await Promise.all([dexContract.getAmountOut(tokenIn, amountIn), dexContract.getReserves()]);
       var outStr = ethers.formatEther(amountOut);
       document.getElementById("toAmount").value = parseFloat(outStr).toFixed(6);
 
       var rate = parseFloat(outStr) / parseFloat(val);
-      var spotRate = isAtoB ? 10 : 0.1;
-      var reserves = await dexContract.getReserves();
       var rA = parseFloat(ethers.formatEther(reserves[0]));
       var rB = parseFloat(ethers.formatEther(reserves[1]));
-      spotRate = isAtoB ? (rB / rA) : (rA / rB);
+      var spotRate = isAtoB ? (rB / rA) : (rA / rB);
       var impact = Math.abs((rate - spotRate) / spotRate * 100).toFixed(2);
 
       var minOut = parseFloat(outStr) * (1 - slippage / 100);
@@ -864,13 +872,16 @@ function switchTab(tab) {
 
 async function updateLiqBalances() {
   try {
-    myWbmbBal = await wbmbContract.balanceOf(userAddress);
-    myFyusdBal = await fyusdContract.balanceOf(userAddress);
-    myLpBal = await dexContract.balanceOf(userAddress);
-    totalLpSupply = await dexContract.totalSupply();
-    var res = await dexContract.getReserves();
-    reserveA = res[0];
-    reserveB = res[1];
+    var [wb, fb, lb, ts, res, p] = await Promise.all([
+      wbmbContract.balanceOf(userAddress),
+      fyusdContract.balanceOf(userAddress),
+      dexContract.balanceOf(userAddress),
+      dexContract.totalSupply(),
+      dexContract.getReserves(),
+      dexContract.getPrice()
+    ]);
+    myWbmbBal = wb; myFyusdBal = fb; myLpBal = lb;
+    totalLpSupply = ts; reserveA = res[0]; reserveB = res[1];
 
     document.getElementById("myWBMB").textContent = parseFloat(ethers.formatEther(myWbmbBal)).toFixed(4);
     document.getElementById("myFYUSD").textContent = parseFloat(ethers.formatEther(myFyusdBal)).toFixed(4);
@@ -879,7 +890,6 @@ async function updateLiqBalances() {
     document.getElementById("resB").textContent = parseFloat(ethers.formatEther(reserveB)).toFixed(4) + " mFYUSD";
 
     if (reserveA > 0n) {
-      var p = await dexContract.getPrice();
       document.getElementById("price").textContent = parseFloat(ethers.formatEther(p[0])).toFixed(4) + " mFYUSD";
     }
 
