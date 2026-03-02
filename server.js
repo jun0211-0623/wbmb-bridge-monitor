@@ -333,10 +333,18 @@ async function connectWallet() {
       }
     }
 
-    // 4. provider + signer
+    // 4. provider + signer (이중 eth_requestAccounts 방지)
     provider = new ethers.BrowserProvider(window.ethereum);
-    signer = await provider.getSigner(accounts[0]);
-    userAddress = accounts[0];
+    var cachedAccounts = accounts.slice();
+    var origSend = provider.send.bind(provider);
+    provider.send = async function(method, params) {
+      if (method === "eth_requestAccounts" || method === "eth_accounts") {
+        return cachedAccounts;
+      }
+      return origSend(method, params);
+    };
+    signer = await provider.getSigner();
+    userAddress = cachedAccounts[0];
 
     // 5. 컨트랙트
     wbmbContract = new ethers.Contract(WBMB, WBMB_ABI, signer);
