@@ -193,7 +193,7 @@ app.get("/burn", (req, res) => {
 <head>
   <title>WBMB Burn Bridge</title>
   <meta charset="utf-8">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; max-width: 600px; margin: 0 auto; }
@@ -263,7 +263,7 @@ app.get("/burn", (req, res) => {
 <script>
 const BRIDGE = "${config.BRIDGE_ADDRESS}";
 const WBMB = "${config.WBMB_ADDRESS}";
-const CHAIN_ID = 84532;
+const CHAIN_HEX = "0x14a34"; // 84532
 
 const WBMB_ABI = [
   "function balanceOf(address) view returns (uint256)",
@@ -276,7 +276,7 @@ const BRIDGE_ABI = [
   "function burnForBMB(uint256, string)"
 ];
 
-let provider, signer, wbmbContract, bridgeContract;
+let provider, signer, wbmbContract, bridgeContract, userAddress;
 
 function setStatus(msg, type) {
   const el = document.getElementById("status");
@@ -284,68 +284,110 @@ function setStatus(msg, type) {
   el.className = "status-" + type;
 }
 
-async function connectWallet() {
+function onConnected(addr) {
+  userAddress = addr;
+  document.getElementById("walletAddr").textContent = addr.slice(0,6) + "..." + addr.slice(-4);
+  document.getElementById("btnConnect").textContent = "Connected";
+  document.getElementById("btnConnect").disabled = true;
+  document.getElementById("btnFaucet").disabled = false;
+  document.getElementById("btnBurn").disabled = false;
+}
+
+async function ensureBaseSepolia() {
+  const chainId = await window.ethereum.request({ method: "eth_chainId" });
+  if (chainId === CHAIN_HEX) return true;
+
   try {
-    if (!window.ethereum) {
-      setStatus("MetaMask not found. Please install it.", "err");
-      return;
-    }
-
-    setStatus("Connecting...", "wait");
-
-    // 1. 계정 접근 요청
-    await window.ethereum.request({ method: "eth_requestAccounts" });
-
-    // 2. Base Sepolia로 전환 (이미 맞으면 무시됨)
-    try {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: "0x14a34" }]
-      });
-    } catch (switchErr) {
-      // 네트워크가 없으면 추가
-      if (switchErr.code === 4902) {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: CHAIN_HEX }]
+    });
+    return true;
+  } catch (e) {
+    if (e.code === 4902) {
+      try {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",
           params: [{
-            chainId: "0x14a34",
+            chainId: CHAIN_HEX,
             chainName: "Base Sepolia",
             rpcUrls: ["https://sepolia.base.org"],
             nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
             blockExplorerUrls: ["https://sepolia.basescan.org"]
           }]
         });
-      } else {
-        setStatus("Network switch failed: " + switchErr.message, "err");
-        return;
+        return true;
+      } catch (e2) {
+        return false;
       }
     }
-
-    // 3. 전환 후 provider 새로 생성
-    provider = new ethers.BrowserProvider(window.ethereum);
-    signer = await provider.getSigner();
-    const addr = await signer.getAddress();
-
-    document.getElementById("walletAddr").textContent = addr.slice(0,6) + "..." + addr.slice(-4);
-    document.getElementById("btnConnect").textContent = "Connected";
-    document.getElementById("btnConnect").disabled = true;
-    document.getElementById("btnFaucet").disabled = false;
-    document.getElementById("btnBurn").disabled = false;
-
-    wbmbContract = new ethers.Contract(WBMB, WBMB_ABI, signer);
-    bridgeContract = new ethers.Contract(BRIDGE, BRIDGE_ABI, signer);
-
-    await updateBalance();
-    setStatus("Wallet connected! (" + addr.slice(0,6) + "..." + addr.slice(-4) + ")", "ok");
-  } catch (err) {
-    setStatus("Connection failed: " + err.message, "err");
+    return false;
   }
 }
 
+async function connectWallet() {
+  try {
+    if (typeof window.ethereum === "undefined") {
+      setStatus("MetaMask not installed. Please install the MetaMask browser extension.", "err");
+      return;
+    }
+
+    setStatus("Connecting wallet...", "wait");
+
+    // 1. 계정 요청 (MetaMask 팝업)
+    let accounts;
+    try {
+      accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    } catch (e) {
+      setStatus("MetaMask connection rejected.", "err");
+      return;
+    }
+
+    if (!accounts || accounts.length === 0) {
+      setStatus("No account selected. Please unlock MetaMask and try again.", "err");
+      return;
+    }
+
+    // 2. Base Sepolia 네트워크 확인/전환
+    const switched = await ensureBaseSepolia();
+    if (!switched) {
+      setStatus("Please switch to Base Sepolia in MetaMask and try again.", "err");
+      return;
+    }
+
+    // 3. ethers provider + signer 생성 (계정 주소 직접 지정)
+    provider = new ethers.BrowserProvider(window.ethereum, {
+      chainId: 84532,
+      name: "base-sepolia"
+    });
+    signer = await provider.getSigner(accounts[0]);
+
+    // 4. 컨트랙트 연결
+    wbmbContract = new ethers.Contract(WBMB, WBMB_ABI, signer);
+    bridgeContract = new ethers.Contract(BRIDGE, BRIDGE_ABI, signer);
+
+    onConnected(accounts[0]);
+    await updateBalance();
+    setStatus("Connected: " + accounts[0].slice(0,6) + "..." + accounts[0].slice(-4), "ok");
+
+  } catch (err) {
+    setStatus("Error: " + (err.shortMessage || err.message), "err");
+  }
+}
+
+// MetaMask 이벤트: 계정/체인 변경 시 새로고침
+if (window.ethereum) {
+  window.ethereum.on("chainChanged", function() { location.reload(); });
+  window.ethereum.on("accountsChanged", function() { location.reload(); });
+}
+
 async function updateBalance() {
-  const addr = await signer.getAddress();
-  const bal = await wbmbContract.balanceOf(addr);
-  document.getElementById("tokenBalance").textContent = ethers.formatEther(bal);
+  try {
+    const bal = await wbmbContract.balanceOf(userAddress);
+    document.getElementById("tokenBalance").textContent = ethers.formatEther(bal);
+  } catch (e) {
+    document.getElementById("tokenBalance").textContent = "?";
+  }
 }
 
 async function getFaucet() {
@@ -358,7 +400,7 @@ async function getFaucet() {
     await updateBalance();
     setStatus("Got 100 mWBMB!", "ok");
   } catch (err) {
-    setStatus("Faucet error: " + err.message, "err");
+    setStatus("Faucet error: " + (err.shortMessage || err.message), "err");
   } finally {
     document.getElementById("btnFaucet").disabled = false;
   }
@@ -374,29 +416,29 @@ async function executeBurn() {
     const parsedAmount = ethers.parseEther(amount);
     document.getElementById("btnBurn").disabled = true;
 
-    // Check allowance & approve if needed
-    const addr = await signer.getAddress();
-    const allowance = await wbmbContract.allowance(addr, BRIDGE);
+    // allowance 확인 + approve
+    const allowance = await wbmbContract.allowance(userAddress, BRIDGE);
     if (allowance < parsedAmount) {
-      setStatus("Step 1/2: Approving tokens...", "wait");
+      setStatus("Step 1/2: Approving tokens... (confirm in MetaMask)", "wait");
       const approveTx = await wbmbContract.approve(BRIDGE, parsedAmount);
+      setStatus("Step 1/2: Waiting for approval TX...", "wait");
       await approveTx.wait();
     }
 
-    // Burn
-    setStatus("Step 2/2: Burning " + amount + " mWBMB...", "wait");
+    // 소각 실행
+    setStatus("Step 2/2: Burning " + amount + " mWBMB... (confirm in MetaMask)", "wait");
     const burnTx = await bridgeContract.burnForBMB(parsedAmount, mobickAddr);
-    setStatus("TX sent, waiting for confirmation...", "wait");
+    setStatus("Waiting for burn TX confirmation...", "wait");
     const receipt = await burnTx.wait();
 
     await updateBalance();
     setStatus(
-      "Burn successful! " + amount + " mWBMB burned. TX: " + receipt.hash +
-      " — Check the Monitor Dashboard to see your burn detected!",
+      "Burn successful! " + amount + " mWBMB burned. TX: " + receipt.hash.slice(0,14) + "..." +
+      " Check the Monitor Dashboard!",
       "ok"
     );
   } catch (err) {
-    setStatus("Burn error: " + err.message, "err");
+    setStatus("Burn error: " + (err.shortMessage || err.message), "err");
   } finally {
     document.getElementById("btnBurn").disabled = false;
   }
