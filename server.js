@@ -277,38 +277,63 @@ const BRIDGE_ABI = [
 ];
 
 let provider, signer, wbmbContract, bridgeContract, userAddress;
-var mmProvider = null; // MetaMask 전용 provider
+var mmProvider = null;
 
 function setStatus(msg, type) {
-  const el = document.getElementById("status");
+  var el = document.getElementById("status");
   el.textContent = msg;
   el.className = "status-" + type;
 }
 
-// 여러 지갑 중 MetaMask만 찾기
-function getMetaMaskProvider() {
-  if (window.ethereum) {
-    // 여러 지갑이 있으면 providers 배열에서 MetaMask 찾기
-    if (window.ethereum.providers && window.ethereum.providers.length) {
-      for (var i = 0; i < window.ethereum.providers.length; i++) {
-        if (window.ethereum.providers[i].isMetaMask) {
-          return window.ethereum.providers[i];
-        }
+// EIP-6963: 지갑을 정확한 이름/ID로 식별
+function findMetaMask() {
+  return new Promise(function(resolve) {
+    var found = false;
+    var wallets = [];
+
+    window.addEventListener("eip6963:announceProvider", function(event) {
+      var info = event.detail.info;
+      wallets.push(info.rdns + " / " + info.name);
+      // MetaMask RDNS = "io.metamask"
+      if (info.rdns === "io.metamask" || info.rdns === "io.metamask.flask") {
+        found = true;
+        resolve(event.detail.provider);
       }
-    }
-    // 단일 지갑이 MetaMask인 경우
-    if (window.ethereum.isMetaMask) {
-      return window.ethereum;
-    }
-  }
-  return null;
+    });
+
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    // 1초 대기 후 EIP-6963 실패 시 fallback
+    setTimeout(function() {
+      if (!found) {
+        // fallback: providers 배열에서 Trust Wallet 제외하고 MetaMask 찾기
+        if (window.ethereum && window.ethereum.providers) {
+          for (var i = 0; i < window.ethereum.providers.length; i++) {
+            var p = window.ethereum.providers[i];
+            if (p.isMetaMask && !p.isTrust && !p.isTrustWallet) {
+              resolve(p);
+              return;
+            }
+          }
+        }
+        if (window.ethereum && window.ethereum.isMetaMask && !window.ethereum.isTrust) {
+          resolve(window.ethereum);
+          return;
+        }
+        resolve(null);
+      }
+    }, 1000);
+  });
 }
 
 async function connectWallet() {
   try {
-    mmProvider = getMetaMaskProvider();
     if (!mmProvider) {
-      setStatus("MetaMask not found. Other wallets detected but MetaMask is required.", "err");
+      setStatus("Finding MetaMask...", "wait");
+      mmProvider = await findMetaMask();
+    }
+    if (!mmProvider) {
+      setStatus("MetaMask not found. Make sure MetaMask extension is installed and enabled.", "err");
       return;
     }
 
@@ -398,17 +423,17 @@ async function connectWallet() {
 }
 
 // 페이지 로드 시 MetaMask 감지 + 자동 연결
-window.addEventListener("load", function() {
-  var mm = getMetaMaskProvider();
-  if (!mm) return;
+window.addEventListener("load", async function() {
+  mmProvider = await findMetaMask();
+  if (!mmProvider) return;
 
-  mm.on("chainChanged", function() { location.reload(); });
-  mm.on("accountsChanged", function(accs) {
+  mmProvider.on("chainChanged", function() { location.reload(); });
+  mmProvider.on("accountsChanged", function(accs) {
     if (accs.length === 0) { location.reload(); }
     else { connectWallet(); }
   });
 
-  mm.request({ method: "eth_accounts" }).then(function(accs) {
+  mmProvider.request({ method: "eth_accounts" }).then(function(accs) {
     if (accs && accs.length > 0) { connectWallet(); }
   }).catch(function() {});
 });
