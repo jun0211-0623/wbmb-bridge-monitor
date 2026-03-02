@@ -277,6 +277,7 @@ const BRIDGE_ABI = [
 ];
 
 let provider, signer, wbmbContract, bridgeContract, userAddress;
+var mmProvider = null; // MetaMask 전용 provider
 
 function setStatus(msg, type) {
   const el = document.getElementById("status");
@@ -284,26 +285,46 @@ function setStatus(msg, type) {
   el.className = "status-" + type;
 }
 
+// 여러 지갑 중 MetaMask만 찾기
+function getMetaMaskProvider() {
+  if (window.ethereum) {
+    // 여러 지갑이 있으면 providers 배열에서 MetaMask 찾기
+    if (window.ethereum.providers && window.ethereum.providers.length) {
+      for (var i = 0; i < window.ethereum.providers.length; i++) {
+        if (window.ethereum.providers[i].isMetaMask) {
+          return window.ethereum.providers[i];
+        }
+      }
+    }
+    // 단일 지갑이 MetaMask인 경우
+    if (window.ethereum.isMetaMask) {
+      return window.ethereum;
+    }
+  }
+  return null;
+}
+
 async function connectWallet() {
   try {
-    if (typeof window.ethereum === "undefined") {
-      setStatus("No wallet detected. Install MetaMask extension.", "err");
+    mmProvider = getMetaMaskProvider();
+    if (!mmProvider) {
+      setStatus("MetaMask not found. Other wallets detected but MetaMask is required.", "err");
       return;
     }
 
-    setStatus("Connecting...", "wait");
+    setStatus("Connecting to MetaMask...", "wait");
 
     // 1. 이미 연결된 계정 확인
-    var accounts = await window.ethereum.request({ method: "eth_accounts" });
+    var accounts = await mmProvider.request({ method: "eth_accounts" });
 
-    // 2. 없으면 wallet_requestPermissions 으로 권한 요청 (MetaMask 공식 권장)
+    // 2. 없으면 권한 요청
     if (!accounts || accounts.length === 0) {
       try {
-        await window.ethereum.request({
+        await mmProvider.request({
           method: "wallet_requestPermissions",
           params: [{ eth_accounts: {} }]
         });
-        accounts = await window.ethereum.request({ method: "eth_accounts" });
+        accounts = await mmProvider.request({ method: "eth_accounts" });
       } catch (permErr) {
         if (permErr.code === 4001) {
           setStatus("Connection rejected. Please approve in MetaMask.", "err");
@@ -320,16 +341,16 @@ async function connectWallet() {
     }
 
     // 3. 체인 확인 & 전환
-    var chainId = await window.ethereum.request({ method: "eth_chainId" });
+    var chainId = await mmProvider.request({ method: "eth_chainId" });
     if (chainId !== CHAIN_HEX) {
       try {
-        await window.ethereum.request({
+        await mmProvider.request({
           method: "wallet_switchEthereumChain",
           params: [{ chainId: CHAIN_HEX }]
         });
       } catch (e) {
         if (e.code === 4902) {
-          await window.ethereum.request({
+          await mmProvider.request({
             method: "wallet_addEthereumChain",
             params: [{
               chainId: CHAIN_HEX,
@@ -344,13 +365,12 @@ async function connectWallet() {
           return;
         }
       }
-      // 체인 전환 후 계정 다시 조회
-      accounts = await window.ethereum.request({ method: "eth_accounts" });
+      accounts = await mmProvider.request({ method: "eth_accounts" });
     }
 
-    // 4. ethers provider + signer (내부 이중호출 방지)
+    // 4. ethers provider + signer (MetaMask provider 사용, 이중호출 방지)
     var cached = accounts.slice();
-    provider = new ethers.BrowserProvider(window.ethereum);
+    provider = new ethers.BrowserProvider(mmProvider);
     var origSend = provider.send.bind(provider);
     provider.send = async function(method, params) {
       if (method === "eth_requestAccounts" || method === "eth_accounts") return cached;
@@ -377,21 +397,21 @@ async function connectWallet() {
   }
 }
 
-if (typeof window.ethereum !== "undefined") {
-  window.ethereum.on("chainChanged", function() { location.reload(); });
-  window.ethereum.on("accountsChanged", function(accs) {
+// 페이지 로드 시 MetaMask 감지 + 자동 연결
+window.addEventListener("load", function() {
+  var mm = getMetaMaskProvider();
+  if (!mm) return;
+
+  mm.on("chainChanged", function() { location.reload(); });
+  mm.on("accountsChanged", function(accs) {
     if (accs.length === 0) { location.reload(); }
     else { connectWallet(); }
   });
 
-  // 페이지 로드 시 이미 승인된 사이트면 자동 연결
-  window.addEventListener("load", async function() {
-    try {
-      var accs = await window.ethereum.request({ method: "eth_accounts" });
-      if (accs && accs.length > 0) { connectWallet(); }
-    } catch(e) {}
-  });
-}
+  mm.request({ method: "eth_accounts" }).then(function(accs) {
+    if (accs && accs.length > 0) { connectWallet(); }
+  }).catch(function() {});
+});
 
 async function updateBalance() {
   try {
