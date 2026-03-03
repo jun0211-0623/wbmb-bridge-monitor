@@ -1,5 +1,7 @@
 const { ethers } = require("ethers");
 const express = require("express");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const config = require("./config");
 
 // 설정 검증
@@ -7,6 +9,14 @@ if (!config.BRIDGE_ADDRESS || !config.WBMB_ADDRESS) {
   console.error("Error: Contract addresses not set in monitor/config.js");
   process.exit(1);
 }
+
+// XSS 방지: HTML 이스케이프
+function esc(str) {
+  if (typeof str !== "string") return String(str);
+  return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+const MAX_EVENTS = 1000;
 
 const BRIDGE_ABI = [
   "event BurnExecuted(uint256 indexed burnId, address indexed burner, uint256 amount, string mobickAddress, uint256 timestamp)",
@@ -41,6 +51,29 @@ const ERC20_ABI = [
 ];
 
 const app = express();
+
+// 보안 헤더
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        connectSrc: ["'self'", "https://sepolia.base.org", "wss://sepolia.base.org"],
+      },
+    },
+  })
+);
+
+// API rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { error: "Too many requests" },
+});
+app.use("/api/", apiLimiter);
+
 const burnEvents = [];
 const dexEvents = [];
 const seenBurnIds = new Set();
@@ -261,6 +294,7 @@ async function startMonitor() {
       mobickAddress: e.args[3],
       timestamp: new Date(Number(e.args[4]) * 1000).toISOString(),
     };
+    if (burnEvents.length >= MAX_EVENTS) burnEvents.shift();
     burnEvents.push(event);
     console.log(`BURN #${event.burnId}: ${event.amount} WBMB from ${event.burner.slice(0,8)}...`);
   }
@@ -302,6 +336,7 @@ async function startMonitor() {
       console.log(`LP-: ${event.amountA} mWBMB + ${event.amountB} mFYUSD`);
     }
 
+    if (dexEvents.length >= MAX_EVENTS) dexEvents.shift();
     dexEvents.push(event);
   }
 
@@ -374,20 +409,20 @@ app.get("/", (req, res) => {
 
   const burnRows = burnEvents.map((e) => `
     <tr>
-      <td>${e.burnId}</td>
-      <td title="${e.burner}">${e.burner.slice(0,8)}...${e.burner.slice(-6)}</td>
-      <td>${e.amount} WBMB</td>
-      <td title="${e.mobickAddress}">${e.mobickAddress.length > 20 ? e.mobickAddress.slice(0,20) + "..." : e.mobickAddress}</td>
-      <td>${e.timestamp}</td>
+      <td>${esc(e.burnId)}</td>
+      <td title="${esc(e.burner)}">${esc(e.burner.slice(0,8))}...${esc(e.burner.slice(-6))}</td>
+      <td>${esc(e.amount)} WBMB</td>
+      <td title="${esc(e.mobickAddress)}">${esc(e.mobickAddress.length > 20 ? e.mobickAddress.slice(0,20) + "..." : e.mobickAddress)}</td>
+      <td>${esc(e.timestamp)}</td>
     </tr>`).reverse().join("");
 
   const dexRows = dexEvents.map((e) => {
     if (e.type === "Swap") {
-      return `<tr><td style="color:#4ecca3">SWAP</td><td title="${e.user}">${e.user.slice(0,8)}...</td><td>${e.direction}</td><td>${e.amountIn} -> ${e.amountOut}</td><td>${e.timestamp}</td></tr>`;
+      return `<tr><td style="color:#4ecca3">SWAP</td><td title="${esc(e.user)}">${esc(e.user.slice(0,8))}...</td><td>${esc(e.direction)}</td><td>${esc(e.amountIn)} -&gt; ${esc(e.amountOut)}</td><td>${esc(e.timestamp)}</td></tr>`;
     } else if (e.type === "LiquidityAdded") {
-      return `<tr><td style="color:#533483">LP+</td><td title="${e.user}">${e.user.slice(0,8)}...</td><td>Add Liquidity</td><td>${e.amountA} mWBMB + ${e.amountB} mFYUSD</td><td>${e.timestamp}</td></tr>`;
+      return `<tr><td style="color:#533483">LP+</td><td title="${esc(e.user)}">${esc(e.user.slice(0,8))}...</td><td>Add Liquidity</td><td>${esc(e.amountA)} mWBMB + ${esc(e.amountB)} mFYUSD</td><td>${esc(e.timestamp)}</td></tr>`;
     } else {
-      return `<tr><td style="color:#e94560">LP-</td><td title="${e.user}">${e.user.slice(0,8)}...</td><td>Remove Liquidity</td><td>${e.amountA} mWBMB + ${e.amountB} mFYUSD</td><td>${e.timestamp}</td></tr>`;
+      return `<tr><td style="color:#e94560">LP-</td><td title="${esc(e.user)}">${esc(e.user.slice(0,8))}...</td><td>Remove Liquidity</td><td>${esc(e.amountA)} mWBMB + ${esc(e.amountB)} mFYUSD</td><td>${esc(e.timestamp)}</td></tr>`;
     }
   }).reverse().join("");
 
@@ -445,7 +480,7 @@ app.get("/burn", (req, res) => {
 <html><head>
   <title>WBMB Burn Bridge</title>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
   <style>${COMMON_STYLE}</style>
 </head><body>
   <div class="nav">${NAV_LINKS}</div>
@@ -542,7 +577,7 @@ app.get("/swap", (req, res) => {
 <html><head>
   <title>DEX Swap</title>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
   <style>${COMMON_STYLE}
     .swap-box { position: relative; }
     .token-label { display: flex; justify-content: space-between; align-items: center; }
@@ -772,7 +807,7 @@ app.get("/liquidity", (req, res) => {
 <html><head>
   <title>DEX Liquidity</title>
   <meta charset="utf-8">
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
   <style>${COMMON_STYLE}
     .tab-bar { display: flex; gap: 0; margin-bottom: 0; }
     .tab-bar button { border-radius: 6px 6px 0 0; background: #0f3460; color: #aaa; padding: 12px 20px; border: none; cursor: pointer; font-family: monospace; font-size: 1em; width: auto; }
@@ -1014,8 +1049,13 @@ async function removeLiq() {
     document.getElementById("btnRemove").disabled = true;
     var lpAmt = ethers.parseEther(val);
 
+    // 슬리피지 보호: 예상 수령량의 95%를 최소값으로 설정
+    var [res, ts] = await Promise.all([dexContract.getReserves(), dexContract.totalSupply()]);
+    var minA = lpAmt * res[0] / ts * 95n / 100n;
+    var minB = lpAmt * res[1] / ts * 95n / 100n;
+
     setStatus("Removing liquidity...", "wait");
-    var tx = await dexContract.removeLiquidity(lpAmt, 0, 0);
+    var tx = await dexContract.removeLiquidity(lpAmt, minA, minB);
     await tx.wait();
     await updateLiqBalances();
     document.getElementById("removeLP").value = "";
