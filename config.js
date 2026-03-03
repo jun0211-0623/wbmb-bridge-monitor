@@ -7,6 +7,12 @@ module.exports = {
     process.env.FYUSD_ADDRESS || "0x97eb8d68877FB91d1994498b57A0c8B96dD8728A",
   DEX_ADDRESS:
     process.env.DEX_ADDRESS || "0x56B7655A73d00cD65C31daadce3C9D253e24da38",
+  MOVEN_ADDRESS:
+    process.env.MOVEN_ADDRESS || "0x07C31768AC0b18b206124E3556b06dA79ff70b19",
+  VAULT_ADDRESS:
+    process.env.VAULT_ADDRESS || "0x8A76d24fcE2d0a619188e2Afc9f4EeB2E4d5879b",
+  ORACLE_ADDRESS:
+    process.env.ORACLE_ADDRESS || "0x0b1880A03e5d9dD3b0eAf7e4e77458a9Ec4C189a",
   RPC_URL: process.env.RPC_URL || "https://sepolia.base.org",
   PORT: process.env.PORT || 3000,
 };
