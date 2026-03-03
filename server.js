@@ -430,6 +430,7 @@ app.get("/", (req, res) => {
 <html><head>
   <title>WBMB Monitor</title>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="5">
   <style>
     body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; max-width: 1100px; margin: 0 auto; }
@@ -480,6 +481,7 @@ app.get("/burn", (req, res) => {
 <html><head>
   <title>WBMB Burn Bridge</title>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
   <style>${COMMON_STYLE}</style>
 </head><body>
@@ -577,6 +579,7 @@ app.get("/swap", (req, res) => {
 <html><head>
   <title>DEX Swap</title>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
   <style>${COMMON_STYLE}
     .swap-box { position: relative; }
@@ -807,6 +810,7 @@ app.get("/liquidity", (req, res) => {
 <html><head>
   <title>DEX Liquidity</title>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
   <style>${COMMON_STYLE}
     .tab-bar { display: flex; gap: 0; margin-bottom: 0; }
