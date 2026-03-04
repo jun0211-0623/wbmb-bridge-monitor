@@ -72,8 +72,12 @@ const VAULT_ABI = [
   "function isIssuancePaused() view returns (bool)",
   "function getRedemptionAmount(uint256) view returns (uint256)",
   "function getInsuranceSurplus() view returns (uint256 surplus, uint256 target)",
+  "function liquidate(address vaultOwner, uint256 movenAmount)",
+  "function isLiquidatable(address) view returns (bool)",
+  "function getLiquidationInfo(address) view returns (bool canLiquidate, uint256 maxMovenToLiquidate, uint256 collateralSeizable, uint256 bonusAmount)",
   "event MovenIssued(address indexed user, uint256 wbmbDeposited, uint256 movenMinted, uint256 feeAmount, uint256 price)",
   "event MovenRedeemed(address indexed user, uint256 movenBurned, uint256 wbmbReturned, uint256 price)",
+  "event VaultLiquidated(address indexed vaultOwner, address indexed liquidator, uint256 movenBurned, uint256 collateralSeized, uint256 liquidatorBonus, uint256 insuranceCost, uint256 price)",
 ];
 
 const STAKING_ABI = [
@@ -507,6 +511,12 @@ async function startMonitor() {
       event.movenBurned = ethers.formatEther(e.args[1]);
       event.wbmbReturned = ethers.formatEther(e.args[2]);
       console.log(`VAULT-: ${event.movenBurned} MOVEN -> ${event.wbmbReturned} WBMB`);
+    } else if (type === "VaultLiquidated") {
+      event.user = e.args[0];
+      event.liquidator = e.args[1];
+      event.movenBurned = ethers.formatEther(e.args[2]);
+      event.collateralSeized = ethers.formatEther(e.args[3]);
+      console.log(`VAULT-LIQ: ${event.movenBurned} MOVEN liquidated from ${event.user.slice(0,8)}...`);
     }
     if (vaultEvents.length >= MAX_EVENTS) vaultEvents.shift();
     vaultEvents.push(event);
@@ -548,6 +558,7 @@ async function startMonitor() {
     if (vaultC) {
       queries.push(vaultC.queryFilter("MovenIssued", fromBlock));
       queries.push(vaultC.queryFilter("MovenRedeemed", fromBlock));
+      queries.push(vaultC.queryFilter("VaultLiquidated", fromBlock));
     }
     if (stakingC) {
       queries.push(stakingC.queryFilter("Staked", fromBlock));
@@ -562,6 +573,7 @@ async function startMonitor() {
     const pastRemoves = dex ? results[idx++] : [];
     const pastVIssued = vaultC ? results[idx++] : [];
     const pastVRedeemed = vaultC ? results[idx++] : [];
+    const pastVLiquidated = vaultC ? results[idx++] : [];
     const pastStaked = stakingC ? results[idx++] : [];
     const pastUnstaked = stakingC ? results[idx++] : [];
     const pastClaimed = stakingC ? results[idx++] : [];
@@ -578,7 +590,8 @@ async function startMonitor() {
     if (vaultC) {
       for (const e of pastVIssued) processVaultEvent(e, "MovenIssued");
       for (const e of pastVRedeemed) processVaultEvent(e, "MovenRedeemed");
-      console.log(`Loaded ${pastVIssued.length} vault issue, ${pastVRedeemed.length} redeem event(s)`);
+      for (const e of pastVLiquidated) processVaultEvent(e, "VaultLiquidated");
+      console.log(`Loaded ${pastVIssued.length} vault issue, ${pastVRedeemed.length} redeem, ${pastVLiquidated.length} liquidation event(s)`);
     }
     if (stakingC) {
       for (const e of pastStaked) processStakingEvent(e, "Staked");
@@ -608,6 +621,7 @@ async function startMonitor() {
       if (vaultC) {
         pollQueries.push(vaultC.queryFilter("MovenIssued", lastBlock + 1, currentBlock));
         pollQueries.push(vaultC.queryFilter("MovenRedeemed", lastBlock + 1, currentBlock));
+        pollQueries.push(vaultC.queryFilter("VaultLiquidated", lastBlock + 1, currentBlock));
       }
       if (stakingC) {
         pollQueries.push(stakingC.queryFilter("Staked", lastBlock + 1, currentBlock));
@@ -622,6 +636,7 @@ async function startMonitor() {
       const removes = dex ? pr[pi++] : [];
       const vIssued = vaultC ? pr[pi++] : [];
       const vRedeemed = vaultC ? pr[pi++] : [];
+      const vLiquidated = vaultC ? pr[pi++] : [];
       const sStaked = stakingC ? pr[pi++] : [];
       const sUnstaked = stakingC ? pr[pi++] : [];
       const sClaimed = stakingC ? pr[pi++] : [];
@@ -634,6 +649,7 @@ async function startMonitor() {
       }
       for (const e of vIssued) processVaultEvent(e, "MovenIssued");
       for (const e of vRedeemed) processVaultEvent(e, "MovenRedeemed");
+      for (const e of vLiquidated) processVaultEvent(e, "VaultLiquidated");
       for (const e of sStaked) processStakingEvent(e, "Staked");
       for (const e of sUnstaked) processStakingEvent(e, "Unstaked");
       for (const e of sClaimed) processStakingEvent(e, "RewardsClaimed");
@@ -1370,12 +1386,16 @@ app.get("/vault", (req, res) => {
     <div class="info-row"><span>MOVEN Issued</span><span id="myMoven">--</span></div>
     <div class="info-row"><span>Collateral Ratio</span><span id="myRatio">--</span></div>
     <div class="info-row"><span>Issuance Price</span><span id="myPrice">--</span></div>
+    <div id="liqWarning" style="display:none; background:rgba(233,69,96,0.15); border:1px solid #e94560; border-radius:8px; padding:12px; margin-top:10px; color:#e94560; font-weight:600; text-align:center; animation: pulse 1.5s ease-in-out infinite">
+      WARNING: Your vault is below 130% and can be liquidated!
+    </div>
   </div>
 
   <div class="card">
     <div class="tab-bar">
       <button class="active" onclick="switchTab('open')">Open Vault</button>
       <button onclick="switchTab('redeem')">Redeem MOVEN</button>
+      <button onclick="switchTab('liquidate')">Liquidate</button>
     </div>
 
     <div id="tab-open" class="tab-content active">
@@ -1396,6 +1416,21 @@ app.get("/vault", (req, res) => {
         <div class="info-row"><span>Est. WBMB Return</span><span id="redeemWbmb" style="color:#4ecca3;font-weight:700">--</span></div>
       </div>
       <button class="btn-gold" onclick="redeemMoven()">Redeem MOVEN</button>
+    </div>
+
+    <div id="tab-liquidate" class="tab-content">
+      <label>Vault Owner Address</label>
+      <input type="text" id="liqAddress" placeholder="0x..." oninput="previewLiquidation()">
+      <div id="liqInfo" style="display:none; margin-bottom:12px">
+        <div class="info-row"><span>Status</span><span id="liqStatus">--</span></div>
+        <div class="info-row"><span>Collateral Ratio</span><span id="liqRatio">--</span></div>
+        <div class="info-row"><span>Max MOVEN to Liquidate</span><span id="liqMaxMoven">--</span></div>
+        <div class="info-row"><span>Collateral Seizable</span><span id="liqCollateral" style="color:#4ecca3;font-weight:700">--</span></div>
+        <div class="info-row"><span>Liquidation Bonus (5%)</span><span id="liqBonus" style="color:#FFD54F;font-weight:700">--</span></div>
+      </div>
+      <label>MOVEN Amount to Liquidate</label>
+      <input type="number" id="liqAmount" placeholder="Amount" step="any">
+      <button class="btn-action" onclick="executeLiquidation()" style="background:linear-gradient(135deg, #e94560, #8B1A30)">Liquidate Vault</button>
     </div>
   </div>
 
@@ -1418,6 +1453,9 @@ const VAULT_ABI = [
   "function insuranceBalance() view returns (uint256)",
   "function isIssuancePaused() view returns (bool)",
   "function getRedemptionAmount(uint256) view returns (uint256)",
+  "function liquidate(address vaultOwner, uint256 movenAmount)",
+  "function isLiquidatable(address) view returns (bool)",
+  "function getLiquidationInfo(address) view returns (bool canLiquidate, uint256 maxMovenToLiquidate, uint256 collateralSeizable, uint256 bonusAmount)",
 ];
 const ORACLE_ABI = [
   "function price() view returns (uint256)",
@@ -1479,6 +1517,10 @@ async function updateVaultData() {
         var cr = await vaultContract.getCollateralRatio(userAddress);
         document.getElementById("myRatio").textContent = cr > 1000000n ? "N/A" : cr.toString() + "%";
       } catch(e) { document.getElementById("myRatio").textContent = "N/A"; }
+      try {
+        var isLiq = await vaultContract.isLiquidatable(userAddress);
+        document.getElementById("liqWarning").style.display = isLiq ? "block" : "none";
+      } catch(e) { document.getElementById("liqWarning").style.display = "none"; }
     } else {
       document.getElementById("vaultInfoCard").style.display = "none";
     }
@@ -1561,6 +1603,52 @@ async function getFaucet() {
     await tx.wait();
     await updateVaultData();
     setStatus("Got 100 mWBMB!", "ok");
+  } catch(err) { setStatus(err.shortMessage || err.message, "err"); }
+}
+
+var liqTimer = null;
+function previewLiquidation() {
+  clearTimeout(liqTimer);
+  liqTimer = setTimeout(async function() {
+    var addr = document.getElementById("liqAddress").value.trim();
+    if (!addr || !vaultContract || !ethers.isAddress(addr)) {
+      document.getElementById("liqInfo").style.display = "none";
+      return;
+    }
+    try {
+      var info = await vaultContract.getLiquidationInfo(addr);
+      var ratio = await vaultContract.getCollateralRatio(addr);
+      document.getElementById("liqStatus").innerHTML = info.canLiquidate
+        ? '<span class="badge badge-err">LIQUIDATABLE</span>'
+        : '<span class="badge badge-ok">SAFE</span>';
+      document.getElementById("liqRatio").textContent = ratio > 1000000n ? "N/A" : ratio.toString() + "%";
+      document.getElementById("liqMaxMoven").textContent = fmtE(info.maxMovenToLiquidate) + " MOVEN";
+      document.getElementById("liqCollateral").textContent = fmtE(info.collateralSeizable) + " WBMB";
+      document.getElementById("liqBonus").textContent = fmtE(info.bonusAmount) + " WBMB";
+      document.getElementById("liqInfo").style.display = "block";
+      document.getElementById("liqAmount").value = ethers.formatEther(info.maxMovenToLiquidate);
+    } catch(e) {
+      document.getElementById("liqInfo").style.display = "none";
+    }
+  }, 500);
+}
+
+async function executeLiquidation() {
+  try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); return; }
+    var addr = document.getElementById("liqAddress").value.trim();
+    var val = document.getElementById("liqAmount").value;
+    if (!addr || !ethers.isAddress(addr)) { setStatus("Enter valid vault address", "err"); return; }
+    if (!val || parseFloat(val) <= 0) { setStatus("Enter MOVEN amount", "err"); return; }
+
+    setStatus("Executing liquidation...", "wait");
+    var tx = await vaultContract.liquidate(addr, ethers.parseEther(val));
+    await tx.wait();
+    document.getElementById("liqAddress").value = "";
+    document.getElementById("liqAmount").value = "";
+    document.getElementById("liqInfo").style.display = "none";
+    await updateVaultData();
+    setStatus("Liquidation complete! TX: " + tx.hash.slice(0,14) + "...", "ok");
   } catch(err) { setStatus(err.shortMessage || err.message, "err"); }
 }
 
@@ -1914,6 +2002,9 @@ app.get("/ecosystem", async (req, res) => {
     const vRows = vaultEvents.map(e => {
       if (e.type === "MovenIssued") {
         return '<tr><td style="color:#4ecca3">OPEN</td><td>' + esc(e.user.slice(0,8)) + '...</td><td>' + esc(e.wbmbDeposited) + ' WBMB -> ' + esc(e.movenMinted) + ' MOVEN</td><td>' + esc(e.timestamp) + '</td></tr>';
+      }
+      if (e.type === "VaultLiquidated") {
+        return '<tr><td style="color:#FF8F00">LIQUIDATE</td><td>' + esc(e.user.slice(0,8)) + '...</td><td>' + esc(e.movenBurned) + ' MOVEN | ' + esc(e.collateralSeized) + ' WBMB seized</td><td>' + esc(e.timestamp) + '</td></tr>';
       }
       return '<tr><td style="color:#e94560">REDEEM</td><td>' + esc(e.user.slice(0,8)) + '...</td><td>' + esc(e.movenBurned) + ' MOVEN -> ' + esc(e.wbmbReturned) + ' WBMB</td><td>' + esc(e.timestamp) + '</td></tr>';
     }).reverse().join("");
