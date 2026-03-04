@@ -348,8 +348,11 @@ async function connectWallet() {
     if (DEX) dexContract = new ethers.Contract(DEX, DEX_ABI, signer);
 
     document.getElementById("walletAddr").textContent = userAddress.slice(0,6) + "..." + userAddress.slice(-4);
-    document.getElementById("btnConnect").textContent = "Connected";
-    document.getElementById("btnConnect").disabled = true;
+    var btn = document.getElementById("btnConnect");
+    btn.textContent = "Disconnect";
+    btn.className = "btn-secondary";
+    btn.disabled = false;
+    btn.onclick = disconnectWallet;
 
     ${extraSetup || ""}
 
@@ -357,6 +360,15 @@ async function connectWallet() {
   } catch (err) {
     setStatus("[" + (err.code || "?") + "] " + (err.shortMessage || err.message || String(err)), "err");
   }
+}
+
+async function disconnectWallet() {
+  try {
+    if (mmProvider) {
+      await mmProvider.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] });
+    }
+  } catch(e) {}
+  location.reload();
 }
 
 window.addEventListener("load", async function() {
