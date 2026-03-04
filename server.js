@@ -159,46 +159,6 @@ const seenStakingKeys = new Set();
 
 const NAV_LINKS = `<a href="/">Dashboard</a> | <a href="/burn">Burn</a> | <a href="/swap">Swap</a> | <a href="/liquidity">LP</a> | <a href="/vault">Vault</a> | <a href="/staking">Staking</a> | <a href="/ecosystem">Ecosystem</a>`;
 
-const COMMON_STYLE = `
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; max-width: 700px; margin: 0 auto; }
-h1 { color: #e94560; margin-bottom: 5px; }
-.subtitle { color: #aaa; font-size: 0.9em; margin-bottom: 20px; }
-.card { background: #16213e; border-radius: 8px; padding: 20px; margin: 15px 0; }
-label { display: block; color: #aaa; margin-bottom: 5px; font-size: 0.9em; }
-input, select { width: 100%; padding: 12px; background: #0f3460; border: 1px solid #333; border-radius: 6px; color: #eee; font-family: monospace; font-size: 1em; margin-bottom: 10px; }
-input:focus, select:focus { outline: none; border-color: #e94560; }
-button { width: 100%; padding: 14px; border: none; border-radius: 6px; font-family: monospace; font-size: 1.1em; cursor: pointer; transition: opacity 0.2s; }
-button:hover { opacity: 0.9; }
-button:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-connect { background: #0f3460; color: #eee; }
-.btn-action { background: #e94560; color: #fff; }
-.btn-faucet { background: #533483; color: #eee; margin-bottom: 8px; }
-.btn-secondary { background: #0f3460; color: #eee; }
-.wallet { display: flex; justify-content: space-between; align-items: center; }
-.wallet-addr { color: #e94560; font-size: 0.9em; }
-.balance { color: #4ecca3; font-size: 1.1em; }
-#status { margin-top: 15px; padding: 12px; border-radius: 6px; display: none; font-size: 0.9em; word-break: break-all; }
-.status-ok { background: #1b4332; border: 1px solid #4ecca3; display: block !important; }
-.status-err { background: #461220; border: 1px solid #e94560; display: block !important; }
-.status-wait { background: #1a1a2e; border: 1px solid #aaa; display: block !important; }
-a { color: #e94560; }
-.nav { margin-bottom: 20px; font-size: 0.95em; }
-.nav a { margin: 0 2px; }
-.row { display: flex; gap: 10px; }
-.row > * { flex: 1; }
-.pct-btns { display: flex; gap: 6px; margin-bottom: 10px; }
-.pct-btns button { flex: 1; padding: 8px; font-size: 0.85em; background: #0f3460; color: #aaa; }
-.pct-btns button:hover { color: #eee; }
-.swap-arrow { text-align: center; font-size: 1.5em; cursor: pointer; margin: 5px 0; color: #e94560; }
-.swap-arrow:hover { color: #fff; }
-.info-row { display: flex; justify-content: space-between; color: #aaa; font-size: 0.85em; padding: 4px 0; }
-.info-row span:last-child { color: #eee; }
-.tab-bar { display: flex; gap: 0; margin-bottom: 15px; }
-.tab-bar button { border-radius: 6px 6px 0 0; background: #0f3460; color: #aaa; padding: 10px; }
-.tab-bar button.active { background: #16213e; color: #e94560; }
-`;
-
 const PREMIUM_STYLE = `
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #0A0E27 0%, #1A1145 50%, #2D1B69 100%); color: #eee; padding: 20px; max-width: 760px; margin: 0 auto; min-height: 100vh; }
@@ -706,33 +666,25 @@ app.get("/", (req, res) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="5">
-  <style>
-    body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; max-width: 1100px; margin: 0 auto; }
-    h1 { color: #e94560; }
-    h2 { color: #ccc; margin-top: 30px; }
-    .nav { margin-bottom: 20px; font-size: 0.95em; }
-    .nav a { color: #e94560; margin: 0 2px; }
-    .stats { display: flex; gap: 15px; margin: 20px 0; flex-wrap: wrap; }
-    .stat { background: #0f3460; padding: 18px; border-radius: 8px; text-align: center; flex: 1; min-width: 120px; }
-    .stat h2 { color: #e94560; font-size: 1.8em; margin: 0; }
-    .stat p { color: #aaa; margin: 5px 0 0; font-size: 0.85em; }
+  <style>${PREMIUM_STYLE}
+    body { max-width: 1100px; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th { background: #0f3460; padding: 10px; text-align: left; font-size: 0.9em; }
-    td { padding: 8px 10px; border-bottom: 1px solid #333; font-size: 0.85em; }
-    .empty { background: #16213e; border-radius: 8px; padding: 15px; margin: 10px 0; border-left: 4px solid #e94560; color: #aaa; }
-    .info { color: #aaa; font-size: 0.9em; }
+    th { background: rgba(255,255,255,0.06); padding: 10px; text-align: left; font-size: 0.8em; color: rgba(255,255,255,0.4); letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.85em; font-family: 'SF Mono', monospace; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .empty { background: rgba(255,255,255,0.04); border-radius: 10px; padding: 15px; margin: 10px 0; border-left: 4px solid #e94560; color: rgba(255,255,255,0.5); }
   </style>
 </head><body>
   <div class="nav"><b>Dashboard</b> | ${NAV_LINKS.replace('<a href="/">Dashboard</a> | ', '')}</div>
   <h1>WBMB Bridge & DEX Monitor</h1>
-  <p class="info">Base Sepolia Testnet | Auto-refresh 5s</p>
+  <p class="subtitle">Base Sepolia Testnet | Auto-refresh 5s</p>
 
-  <div class="stats">
-    <div class="stat"><h2>${burnEvents.length}</h2><p>Burns</p></div>
-    <div class="stat"><h2>${totalBurned}</h2><p>WBMB Burned</p></div>
-    <div class="stat"><h2>${swapCount}</h2><p>Swaps</p></div>
-    <div class="stat"><h2>${lpAddCount}</h2><p>LP Adds</p></div>
-    <div class="stat"><h2>${lpRemoveCount}</h2><p>LP Removes</p></div>
+  <div class="stat-grid">
+    <div class="stat-box"><div class="stat-value">${burnEvents.length}</div><div class="stat-label">Burns</div></div>
+    <div class="stat-box"><div class="stat-value">${totalBurned}</div><div class="stat-label">WBMB Burned</div></div>
+    <div class="stat-box"><div class="stat-value">${swapCount}</div><div class="stat-label">Swaps</div></div>
+    <div class="stat-box"><div class="stat-value">${lpAddCount}</div><div class="stat-label">LP Adds</div></div>
+    <div class="stat-box"><div class="stat-value">${lpRemoveCount}</div><div class="stat-label">LP Removes</div></div>
   </div>
 
   <h2>Bridge Burns</h2>
@@ -757,7 +709,7 @@ app.get("/burn", (req, res) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
-  <style>${COMMON_STYLE}</style>
+  <style>${PREMIUM_STYLE}</style>
 </head><body>
   <div class="nav">${NAV_LINKS}</div>
   <h1>WBMB Burn Bridge</h1>
@@ -855,14 +807,15 @@ app.get("/swap", (req, res) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
-  <style>${COMMON_STYLE}
+  <style>${PREMIUM_STYLE}
     .swap-box { position: relative; }
     .token-label { display: flex; justify-content: space-between; align-items: center; }
     .token-label .bal { color: #4ecca3; font-size: 0.85em; cursor: pointer; }
     .slippage-row { display: flex; gap: 6px; align-items: center; margin-bottom: 10px; }
-    .slippage-row button { flex: none; width: auto; padding: 6px 12px; font-size: 0.85em; background: #0f3460; color: #aaa; }
-    .slippage-row button.active { color: #e94560; border: 1px solid #e94560; }
-    .quote-info { background: #0f3460; border-radius: 6px; padding: 12px; margin: 10px 0; }
+    .slippage-row button { flex: none; width: auto; padding: 6px 12px; font-size: 0.85em; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); border: 1px solid rgba(255,255,255,0.08); box-shadow: none; }
+    .slippage-row button.active { color: #FFD54F; border-color: rgba(255,213,79,0.3); }
+    .quote-info { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px; margin: 10px 0; }
+    .pool-info { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px; margin: 10px 0; }
   </style>
 </head><body>
   <div class="nav">${NAV_LINKS}</div>
@@ -886,7 +839,7 @@ app.get("/swap", (req, res) => {
 
   <div class="card" id="poolCard">
     <b>Pool Status</b>
-    <div style="background:#0f3460;border-radius:6px;padding:12px;margin-top:10px">
+    <div class="pool-info">
       <div class="info-row"><span>Reserve mWBMB</span><span id="poolResA">-</span></div>
       <div class="info-row"><span>Reserve mFYUSD</span><span id="poolResB">-</span></div>
       <div class="info-row"><span>Price (1 mWBMB)</span><span id="poolPrice">-</span></div>
@@ -1086,13 +1039,8 @@ app.get("/liquidity", (req, res) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.5/dist/ethers.umd.min.js" integrity="sha384-NRAZj94DQk3dgtsOZzVYHbYVV1DFkF5QhL5RRxF0ILZLi6OQ7CsMlun748D42JbO" crossorigin="anonymous"><\/script>
-  <style>${COMMON_STYLE}
-    .tab-bar { display: flex; gap: 0; margin-bottom: 0; }
-    .tab-bar button { border-radius: 6px 6px 0 0; background: #0f3460; color: #aaa; padding: 12px 20px; border: none; cursor: pointer; font-family: monospace; font-size: 1em; width: auto; }
-    .tab-bar button.active { background: #16213e; color: #e94560; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-    .pool-info { background: #0f3460; border-radius: 6px; padding: 12px; margin: 10px 0; }
+  <style>${PREMIUM_STYLE}
+    .pool-info { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 12px; margin: 10px 0; }
   </style>
 </head><body>
   <div class="nav">${NAV_LINKS}</div>
