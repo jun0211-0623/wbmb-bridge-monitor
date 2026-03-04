@@ -130,6 +130,14 @@ app.use(
   })
 );
 
+// HTML 페이지 캐시 방지
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) return next();
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.set("Pragma", "no-cache");
+  next();
+});
+
 // API rate limiting
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
