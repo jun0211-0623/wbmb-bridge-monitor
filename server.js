@@ -336,7 +336,17 @@ async function connectWallet() {
       setStatus("Finding MetaMask...", "wait");
       mmProvider = await findMetaMask();
     }
-    if (!mmProvider) { setStatus("MetaMask not found.", "err"); return; }
+    if (!mmProvider) {
+      var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        var deepLink = "https://metamask.app.link/dapp/" + window.location.host + window.location.pathname;
+        setStatus("Opening MetaMask app...", "wait");
+        window.location.href = deepLink;
+        return;
+      }
+      setStatus("MetaMask not found. Install MetaMask extension.", "err");
+      return;
+    }
 
     setStatus("Connecting...", "wait");
     var accounts = await mmProvider.request({ method: "eth_accounts" });
@@ -391,7 +401,20 @@ async function connectWallet() {
 
 window.addEventListener("load", async function() {
   mmProvider = await findMetaMask();
-  if (!mmProvider) return;
+  if (!mmProvider) {
+    var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      var btn = document.getElementById("btnConnect");
+      if (btn) {
+        btn.textContent = "Open in MetaMask App";
+        btn.onclick = function() {
+          window.location.href = "https://metamask.app.link/dapp/" + window.location.host + window.location.pathname;
+        };
+      }
+      setStatus("Mobile: Open this page in MetaMask app to connect", "wait");
+    }
+    return;
+  }
   mmProvider.on("chainChanged", function() { location.reload(); });
   mmProvider.on("accountsChanged", function(accs) {
     if (accs.length === 0) location.reload(); else connectWallet();
