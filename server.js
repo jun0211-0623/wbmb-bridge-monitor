@@ -1321,7 +1321,11 @@ app.get("/vault", (req, res) => {
     vaultContract = new ethers.Contract(VAULT, VAULT_ABI, signer);
     oracleContract = new ethers.Contract(ORACLE, ORACLE_ABI, new ethers.BrowserProvider(mmProvider));
     movenContract = new ethers.Contract(MOVEN, MOVEN_ABI, signer);
-    document.querySelectorAll(".needs-wallet").forEach(function(b) { b.disabled = false; });
+    var hint = document.getElementById("walletHint");
+    if (hint) hint.style.display = "none";
+    var wCard = document.getElementById("btnConnect").closest(".card");
+    if (wCard) wCard.style.borderColor = "rgba(78,204,163,0.3)";
+    document.getElementById("walletAddr").style.color = "#4ecca3";
     updateVaultData();
   `;
 
@@ -1337,12 +1341,13 @@ app.get("/vault", (req, res) => {
   <h1>MOVEN Vault</h1>
   <p class="subtitle">Deposit WBMB &middot; Mint MOVEN &middot; Base Sepolia</p>
 
-  <div class="card">
+  <div class="card" style="border:1px solid rgba(233,69,96,0.3)">
     <div class="wallet">
       <label style="margin:0">Wallet</label>
-      <span id="walletAddr" class="wallet-addr">Not connected</span>
+      <span id="walletAddr" class="wallet-addr" style="color:#e94560">Not connected</span>
     </div>
-    <button class="btn-connect" id="btnConnect" onclick="connectWallet()">Connect MetaMask</button>
+    <button class="btn-action" id="btnConnect" onclick="connectWallet()" style="animation:float 2s ease-in-out infinite">Connect MetaMask</button>
+    <div id="walletHint" style="text-align:center;color:rgba(255,255,255,0.5);font-size:13px;margin-top:8px">Connect your wallet to use Vault features</div>
   </div>
 
   <div class="card">
@@ -1363,7 +1368,7 @@ app.get("/vault", (req, res) => {
       <div><span class="balance-label">mWBMB</span><br><span class="balance" id="wbmbBal">0</span></div>
       <div><span class="balance-label">MOVEN</span><br><span class="balance" id="movenBal">0</span></div>
     </div>
-    <button class="btn-faucet needs-wallet" onclick="getFaucet()" disabled style="margin-top:12px">Get 100 mWBMB (Faucet)</button>
+    <button class="btn-faucet" onclick="getFaucet()" style="margin-top:12px">Get 100 mWBMB (Faucet)</button>
   </div>
 
   <div class="card" id="vaultInfoCard" style="display:none">
@@ -1389,7 +1394,7 @@ app.get("/vault", (req, res) => {
         <div class="info-row"><span>Net WBMB</span><span id="openNet">--</span></div>
         <div class="info-row"><span>Est. MOVEN</span><span id="openMoven" style="color:#4ecca3;font-weight:700">--</span></div>
       </div>
-      <button class="btn-action needs-wallet" onclick="openVault()" disabled>Open Vault</button>
+      <button class="btn-action" onclick="openVault()">Open Vault</button>
     </div>
 
     <div id="tab-redeem" class="tab-content">
@@ -1398,7 +1403,7 @@ app.get("/vault", (req, res) => {
       <div id="redeemPreview" style="display:none; margin-bottom:12px">
         <div class="info-row"><span>Est. WBMB Return</span><span id="redeemWbmb" style="color:#4ecca3;font-weight:700">--</span></div>
       </div>
-      <button class="btn-gold needs-wallet" onclick="redeemMoven()" disabled>Redeem MOVEN</button>
+      <button class="btn-gold" onclick="redeemMoven()">Redeem MOVEN</button>
     </div>
   </div>
 
@@ -1505,6 +1510,7 @@ function previewOpen() {
 
 async function openVault() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     var val = document.getElementById("openAmount").value;
     if (!val || parseFloat(val) <= 0) { setStatus("Enter amount", "err"); return; }
     var amt = ethers.parseEther(val);
@@ -1542,6 +1548,7 @@ function previewRedeem() {
 
 async function redeemMoven() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     var val = document.getElementById("redeemAmount").value;
     if (!val || parseFloat(val) <= 0) { setStatus("Enter amount", "err"); return; }
     setStatus("Redeeming MOVEN...", "wait");
@@ -1556,6 +1563,7 @@ async function redeemMoven() {
 
 async function getFaucet() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     setStatus("Getting 100 mWBMB...", "wait");
     var tx = await wbmbContract.faucet(ethers.parseEther("100"));
     await tx.wait();
@@ -1582,7 +1590,11 @@ app.get("/staking", (req, res) => {
     rewardsContract = new ethers.Contract(REWARDS, REWARDS_ABI, signer);
     movenContract = new ethers.Contract(MOVEN, MOVEN_ABI, signer);
     lpTokenContract = new ethers.Contract(DEX, ERC20_ABI, signer);
-    document.querySelectorAll(".needs-wallet").forEach(function(b) { b.disabled = false; });
+    var hint = document.getElementById("walletHint");
+    if (hint) hint.style.display = "none";
+    var wCard = document.getElementById("btnConnect").closest(".card");
+    if (wCard) wCard.style.borderColor = "rgba(78,204,163,0.3)";
+    document.getElementById("walletAddr").style.color = "#4ecca3";
     updateStakingData();
   `;
 
@@ -1598,12 +1610,13 @@ app.get("/staking", (req, res) => {
   <h1>Staking &amp; LP Farming</h1>
   <p class="subtitle">Stake MOVEN &middot; Farm LP Rewards &middot; Base Sepolia</p>
 
-  <div class="card">
+  <div class="card" style="border:1px solid rgba(233,69,96,0.3)">
     <div class="wallet">
       <label style="margin:0">Wallet</label>
-      <span id="walletAddr" class="wallet-addr">Not connected</span>
+      <span id="walletAddr" class="wallet-addr" style="color:#e94560">Not connected</span>
     </div>
-    <button class="btn-connect" id="btnConnect" onclick="connectWallet()">Connect MetaMask</button>
+    <button class="btn-action" id="btnConnect" onclick="connectWallet()" style="animation:float 2s ease-in-out infinite">Connect MetaMask</button>
+    <div id="walletHint" style="text-align:center;color:rgba(255,255,255,0.5);font-size:13px;margin-top:8px">Connect your wallet to use Staking features</div>
   </div>
 
   <div class="card">
@@ -1634,13 +1647,13 @@ app.get("/staking", (req, res) => {
 
       <label>Stake MOVEN</label>
       <input type="number" id="stakeAmt" placeholder="100" step="any">
-      <button class="btn-action needs-wallet" onclick="stakeMoven()" disabled>Stake MOVEN</button>
+      <button class="btn-action" onclick="stakeMoven()">Stake MOVEN</button>
 
       <label style="margin-top:12px">Unstake MOVEN</label>
       <input type="number" id="unstakeAmt" placeholder="100" step="any">
-      <button class="btn-secondary needs-wallet" onclick="unstakeMoven()" disabled>Unstake MOVEN</button>
+      <button class="btn-secondary" onclick="unstakeMoven()">Unstake MOVEN</button>
 
-      <button class="btn-gold needs-wallet" onclick="claimStaking()" disabled style="margin-top:12px">Claim Rewards</button>
+      <button class="btn-gold" onclick="claimStaking()" style="margin-top:12px">Claim Rewards</button>
     </div>
 
     <!-- LP Farming -->
@@ -1667,13 +1680,13 @@ app.get("/staking", (req, res) => {
         <option value="90">90 Days (1.7x)</option>
         <option value="180">180 Days (2.0x)</option>
       </select>
-      <button class="btn-action needs-wallet" onclick="stakeLP()" disabled>Stake LP</button>
+      <button class="btn-action" onclick="stakeLP()">Stake LP</button>
 
       <label style="margin-top:12px">Unstake LP Tokens</label>
       <input type="number" id="lpUnstakeAmt" placeholder="1.0" step="any">
-      <button class="btn-secondary needs-wallet" onclick="unstakeLP()" disabled>Unstake LP</button>
+      <button class="btn-secondary" onclick="unstakeLP()">Unstake LP</button>
 
-      <button class="btn-gold needs-wallet" onclick="claimLP()" disabled style="margin-top:12px">Claim LP Rewards</button>
+      <button class="btn-gold" onclick="claimLP()" style="margin-top:12px">Claim LP Rewards</button>
     </div>
   </div>
 
@@ -1761,6 +1774,7 @@ async function updateStakingData() {
 
 async function stakeMoven() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     var val = document.getElementById("stakeAmt").value;
     if (!val || parseFloat(val) <= 0) { setStatus("Enter amount", "err"); return; }
     var amt = ethers.parseEther(val);
@@ -1781,6 +1795,7 @@ async function stakeMoven() {
 
 async function unstakeMoven() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     var val = document.getElementById("unstakeAmt").value;
     if (!val || parseFloat(val) <= 0) { setStatus("Enter amount", "err"); return; }
     setStatus("Unstaking...", "wait");
@@ -1794,6 +1809,7 @@ async function unstakeMoven() {
 
 async function claimStaking() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     setStatus("Claiming rewards...", "wait");
     var tx = await stakingContract.claimRewards();
     await tx.wait();
@@ -1804,6 +1820,7 @@ async function claimStaking() {
 
 async function stakeLP() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     var val = document.getElementById("lpStakeAmt").value;
     var days = parseInt(document.getElementById("lockDays").value);
     if (!val || parseFloat(val) <= 0) { setStatus("Enter amount", "err"); return; }
@@ -1825,6 +1842,7 @@ async function stakeLP() {
 
 async function unstakeLP() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     var val = document.getElementById("lpUnstakeAmt").value;
     if (!val || parseFloat(val) <= 0) { setStatus("Enter amount", "err"); return; }
     setStatus("Unstaking LP...", "wait");
@@ -1838,6 +1856,7 @@ async function unstakeLP() {
 
 async function claimLP() {
   try {
+    if (!signer) { setStatus("Connect your wallet first!", "err"); document.getElementById("btnConnect").focus(); return; }
     setStatus("Claiming LP rewards...", "wait");
     var tx = await rewardsContract.claimLPRewards();
     await tx.wait();
